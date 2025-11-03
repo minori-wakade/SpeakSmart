@@ -1,6 +1,0 @@
-streamlit
-opencv-python
-mediapipe
-numpy
-joblib
-tqdm

@@ -3,15 +3,16 @@ import librosa
 import numpy as np
 import os
 import pandas as pd
-import joblib
 import matplotlib.pyplot as plt
 from utils import video_to_wav
 from Eye_Contact.eyecontact import process_eye_contact
 from Speech_Speed.speech_speed import extract_wpm, categorize_wpm
 from Posture.posture_utils import run_posture_analysis
+from CNN_Sentiment_Analysis.test_emotion import run_emotion_analysis
+
 
 # -----------------------------------------
-# 🧠 FRONTEND + BACKEND MERGED SpeakSmart APP
+# FRONTEND + BACKEND MERGED SpeakSmart APP
 # -----------------------------------------
 st.set_page_config(page_title="SpeakSmart", layout="wide")
 
@@ -102,29 +103,13 @@ else:
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.read())
             st.video(file_path)
-            st.info("⚙️ Running AI Analysis...")
 
             # --- Extract Audio ---
             audio_path = video_to_wav(file_path)
             st.audio(audio_path)
 
-            # --- Load Models ---
-            xgb = joblib.load("Sentiment Analysis/xgboost_model.pkl")
-            scaler = joblib.load("Sentiment Analysis/scaler.pkl")
-            le = joblib.load("Sentiment Analysis/label_encoder.pkl")
-
-            # --- Extract Audio Features ---
-            def extract_features(file_path):
-                y, sr = librosa.load(file_path, sr=48000)
-                mfccs = np.mean(librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13).T, axis=0)
-                chroma = np.mean(librosa.feature.chroma_stft(y=y, sr=sr).T, axis=0)
-                mel = np.mean(librosa.feature.melspectrogram(y=y, sr=sr).T, axis=0)
-                contrast = np.mean(librosa.feature.spectral_contrast(y=y, sr=sr).T, axis=0)
-                tonnetz = np.mean(librosa.feature.tonnetz(y=librosa.effects.harmonic(y), sr=sr).T, axis=0)
-                return np.hstack([mfccs, chroma, mel, contrast, tonnetz])
-
             # --- Progress ---
-            st.header("🧠 Processing your video...")
+            st.header("Processing your video...")
             progress_bar = st.progress(0)
             status_text = st.empty()
 
@@ -136,15 +121,8 @@ else:
             eye_contact_percentage, eye_feedback, output_path = process_eye_contact(file_path, "processed_output.mp4", update_progress)
             wpm = extract_wpm(audio_path)
             category = categorize_wpm(wpm)
-            features = extract_features(audio_path)
-            features_scaled = scaler.transform(features.reshape(1, -1))
-            pred = xgb.predict(features_scaled)
-            pred_sentiment = le.inverse_transform(pred)[0]
-            feedback_messages = {
-                "positive": "Great job! You sound confident and engaging. 🚀",
-                "negative": "Try to stay calm and positive — it will improve your delivery. 🌱"
-            }
             posture_result = run_posture_analysis(file_path)
+            emotion_result = run_emotion_analysis(audio_path)
 
             # --- Display Results ---
             st.markdown("<hr>", unsafe_allow_html=True)
@@ -164,8 +142,8 @@ else:
                 st.markdown(f"""
                     <div class="report-card yellow-card">
                         <div class="report-title">😊 Sentiment</div>
-                        <div class="report-metric"><b>Detected:</b> {pred_sentiment}</div>
-                        <div class="report-metric"><b>Feedback:</b> {feedback_messages.get(pred_sentiment, 'No feedback')}</div>
+                        <div class="report-metric"><b>Category:</b> {emotion_result['category']}</div>
+                        <div class="report-metric"><b>Model Confidence:</b> {emotion_result['confidence'] * 100:.2f}%</div>
                     </div>
                 """, unsafe_allow_html=True)
 
