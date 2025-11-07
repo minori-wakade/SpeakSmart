@@ -24,7 +24,6 @@ def save_uploaded_video(uploaded_file):
     tfile.write(uploaded_file.read())
     return tfile.name
 
-
 def process_video(video_path):
     """Processes video, applies posture model, and saves annotated output."""
     cap = cv2.VideoCapture(video_path)
@@ -32,7 +31,14 @@ def process_video(video_path):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
 
-    output_path = os.path.join(tempfile.gettempdir(), "annotated_output.mp4")
+    # Get the absolute path to the project root (one level above Posture)
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+    ANNOTATED_DIR = os.path.join(PROJECT_ROOT, "Annotated_Posture")
+    os.makedirs(ANNOTATED_DIR, exist_ok=True)
+
+    video_name = os.path.splitext(os.path.basename(video_path))[0]
+    output_path = os.path.join(ANNOTATED_DIR, f"{video_name}_annotated.mp4")
+
     out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
 
     predictions = []
@@ -40,7 +46,7 @@ def process_video(video_path):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     with mp_pose.Pose(static_image_mode=False, min_detection_confidence=0.5, model_complexity=1) as pose:
-        progress_bar = st.progress(0)
+        #progress_bar = st.progress(0)
         for _ in tqdm(range(total_frames)):
             ret, frame = cap.read()
             if not ret:
@@ -66,7 +72,7 @@ def process_video(video_path):
 
             out.write(frame)
             frame_no += 1
-            progress_bar.progress(min(frame_no / total_frames, 1.0))
+            #progress_bar.progress(min(frame_no / total_frames, 1.0))
 
     cap.release()
     out.release()
@@ -85,12 +91,12 @@ def analyze_posture(predictions):
     good_percent = (good_count / total) * 100
     bad_percent = (bad_count / total) * 100
 
-    if good_count / total > 0.6:
+    if good_count / total > 0.75:
         summary = "✅ Good posture overall!"
     elif bad_count / total > 0.6:
         summary = "⚠️ Poor posture overall!"
     else:
-        summary = "😐 Mixed posture — needs improvement."
+        summary = "Mixed posture — needs improvement."
 
     return {
         "good": good_count,

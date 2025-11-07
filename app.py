@@ -1,369 +1,435 @@
 import streamlit as st
-import librosa
-import numpy as np
 import os
-import pandas as pd
-import matplotlib.pyplot as plt
+import json
+from datetime import datetime
+import numpy as np
 from utils import video_to_wav
 from Eye_Contact.eyecontact import process_eye_contact
 from Speech_Speed.speech_speed import extract_wpm, categorize_wpm
 from Posture.posture_utils import run_posture_analysis
 from CNN_Sentiment_Analysis.test_emotion import run_emotion_analysis
-
+from Deepface_Expressions.video_processor import process_video  
 
 # -----------------------------------------
-# FRONTEND + BACKEND MERGED SpeakSmart APP
+# 🧠 SpeakSmart App Setup
 # -----------------------------------------
 st.set_page_config(page_title="SpeakSmart", layout="wide")
 
-# --- Global CSS ---
+# Create uploads directory
+UPLOADS_DIR = "uploads"
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+ANNOTATED_DIR = "Annotated_eye_contact"
+os.makedirs(ANNOTATED_DIR, exist_ok=True)
+
+# --- Global Styling ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
-    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+}
+.stApp {
     color: #f5f5f5;
 }
-img {
-    margin-bottom: -40px;  /* pull title closer */
-}
-.main-title {font-size: 2.4rem; font-weight: 700; text-align: center; margin-bottom: 0.4em;}
-.subtitle {text-align: center; color: #ddd; margin-bottom: 2em;}
-.report-card {
-    border-radius: 16px; padding: 24px; margin-bottom: 25px;
-    box-shadow: 0 0 25px rgba(255,255,255,0.08); transition: all 0.3s ease;
+
+/* 🔹 Custom Sidebar */
+section[data-testid="stSidebar"] {
+    background: rgba(40, 40, 40, 0.85); /* lighter black shade */
+    border: none !important;
+    box-shadow: 0 0 20px rgba(0,0,0,0.3);
     backdrop-filter: blur(10px);
-    height: 180px;
-    overflow: hidden; /* prevent overflow */
 }
-.report-card:hover {transform: translateY(-3px); box-shadow: 0 4px 25px rgba(255,255,255,0.15);}
-.green-card {border: 2px solid #80ED99; background: rgba(128,237,153,0.08);}
-.yellow-card {border: 2px solid #FFD166; background: rgba(255,209,102,0.08);}
-.blue-card {border: 2px solid #4CC9F0; background: rgba(76,201,240,0.08);}
-.gray-card {border: 2px solid #ADB5BD; background: rgba(173,181,189,0.08);}
+[data-testid="stSidebarNav"] {
+    display: none !important;
+}
+.sidebar-title {
+    text-align: center;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-top: 10px;
+    margin-bottom: 30px;
+    color: #f5f5f5;
+}
+
+/* Sidebar Buttons */
+.stButton>button {
+    background: rgba(255, 255, 255, 0.08);
+    color: #f5f5f5;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 10px;
+    width: 100%;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+.stButton>button:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+}
+
+/* General Cards and Layout */
+.main-title {
+    font-size: 2.4rem;
+    font-weight: 700;
+    text-align: center;
+    color: #f5f5f5;
+    letter-spacing: 1px;
+    margin-bottom: 0.4em;
+}
+.subtitle {
+    text-align: center;
+    color: #ddd;
+    margin-bottom: 2em;
+}
+.report-card {
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 25px;
+    box-shadow: 0 0 25px rgba(255,255,255,0.08);
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    height: 200px;
+}
+.report-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 25px rgba(255,255,255,0.15);
+}
+.green-card {border: 2px solid #80ED99; background: rgba(128,237,153,0.08); height: 160px}
+.yellow-card {border: 2px solid #FFD166; background: rgba(255,209,102,0.08); height: 160px}
+.blue-card {border: 2px solid #4CC9F0; background: rgba(76,201,240,0.08);height: 160px}
+.gray-card {border: 2px solid #ADB5BD; background: rgba(173,181,189,0.08);height: 160px}
+.purple-card {border: 2px solid #C77DFF; background: rgba(199,125,255,0.08); height: 200px}
 .report-title {font-size: 1.2rem; font-weight: 600; margin-bottom: 10px; text-align:center;}
 .report-metric {font-size: 1rem; margin: 4px 0;}
-.centered {text-align: center;}
 video {
     max-height: 240px;
-    width: auto;
     border-radius: 12px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.3);
 }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Login State ---
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-
-if not st.session_state.logged_in:
-    col1, col2, col3 = st.columns([1, 0.4, 1])
-    with col2:
-        st.image("logo.png", width=210)
-    st.markdown('<div class="main-title">SpeakSmart</div>', unsafe_allow_html=True)
-    st.markdown('<div class="subtitle">Your AI-powered Public Speaking Coach</div>', unsafe_allow_html=True)
-    
-    with st.form("login_form"):
-        username = st.text_input("👤 Username")
-        password = st.text_input("🔑 Password", type="password")
-        login = st.form_submit_button("Login")
-        if login:
-            st.session_state.logged_in = True
-            st.rerun()
-
-else:
-    # --- Sidebar Navigation ---
-    st.sidebar.markdown("<h2 style='margin-bottom:20px; text-align:center'>📋 Hey User!</h2>", unsafe_allow_html=True)
-    nav_items = ["🎥 Analyze Video", "📚 Learning Modules", "📈 My Progress", "🗂️ Library"]
-
+# -----------------------------------------
+# 🧭 Custom Sidebar Navigation
+# -----------------------------------------
+with st.sidebar:
+    st.markdown("<div class='sidebar-title'>SpeakSmart</div>", unsafe_allow_html=True)
+    nav_items = [
+        ("🎥 Analyze Video", "🎥 Analyze Video"),
+        ("📚 Learning Modules", "📚 Learning Modules"),
+        ("🗂️ Library", "🗂️ Library"),
+    ]
     if "page" not in st.session_state:
         st.session_state.page = "🎥 Analyze Video"
 
-    for item in nav_items:
-        if st.sidebar.button(item, use_container_width=True):
-            st.session_state.page = item
+    for label, value in nav_items:
+        if st.button(label, use_container_width=True):
+            st.session_state.page = value
 
-    if st.sidebar.button("🔒 Logout", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
+page = st.session_state.page
 
-    page = st.session_state.page
+# ==========================================================
+# 🎥 ANALYZE VIDEO PAGE
+# ==========================================================
+if page == "🎥 Analyze Video":
+    st.markdown('<div class="main-title">🎥 Analyze Your Speech</div>', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Upload your speaking video", type=["mp4", "mov", "avi"])
 
-    # ------------------------
-    # 🎥 Analyze Video Page
-    # ------------------------
-    if page == "🎥 Analyze Video":
-        st.markdown('<div class="main-title">🎥 Analyze Your Speech</div>', unsafe_allow_html=True)
-        uploaded_file = st.file_uploader("Upload your speaking video", type=["mp4", "mov", "avi"])
+    if uploaded_file is not None:
+        # Create timestamped folder
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        upload_folder = os.path.join(UPLOADS_DIR, timestamp)
+        os.makedirs(upload_folder, exist_ok=True)
 
-        if uploaded_file is not None:
-            file_path = "input" + os.path.splitext(uploaded_file.name)[1]
-            with open(file_path, "wb") as f:
-                f.write(uploaded_file.read())
-            st.video(file_path)
+        video_name = f"{timestamp}_{uploaded_file.name}"
+        file_path = os.path.join(upload_folder, video_name)
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.read())
 
-            # --- Extract Audio ---
-            audio_path = video_to_wav(file_path)
-            st.audio(audio_path)
+        st.video(file_path)
 
-            # --- Progress ---
-            st.header("Processing your video...")
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            def update_progress(current, total):
-                progress_bar.progress(current / total)
-                status_text.text(f"Processing frame {current}/{total}")
-
-            # --- AI Analyses ---
-            eye_contact_percentage, eye_feedback, output_path = process_eye_contact(file_path, "processed_output.mp4", update_progress)
+        # Audio extraction
+        audio_path = video_to_wav(file_path)
+        # st.audio(audio_path)
+        # Run analyses
+        with st.spinner("Analyzing your video, please wait..."):
+            audio_emotion_result = run_emotion_analysis(audio_path)
+            annotated_output_path = os.path.join(ANNOTATED_DIR, f"{timestamp}_eye_contact.mp4")
+            eye_contact_percentage, eye_feedback, _ = process_eye_contact(file_path, annotated_output_path, None)
             wpm = extract_wpm(audio_path)
             category = categorize_wpm(wpm)
             posture_result = run_posture_analysis(file_path)
-            emotion_result = run_emotion_analysis(audio_path)
+            deepface_result = process_video(file_path)
 
-            # --- Display Results ---
-            st.markdown("<hr>", unsafe_allow_html=True)
-            st.subheader("📊 AI Feedback Report")
+        st.success("🎉 All Analysis Complete!")
 
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"""
-                    <div class="report-card green-card">
-                        <div class="report-title">🎵 Speech Speed</div>
-                        <div class="report-metric"><b>Words Per Minute:</b> {round(wpm)}</div>
-                        <div class="report-metric"><b>Category:</b> {category}</div>
-                    </div>
-                """, unsafe_allow_html=True)
+        def convert_to_native(obj):
+            if isinstance(obj, dict):
+                return {k: convert_to_native(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_native(i) for i in obj]
+            elif isinstance(obj, (np.float32, np.float64, np.float16)):
+                return float(obj)
+            elif isinstance(obj, (np.int32, np.int64, np.int16)):
+                return int(obj)
+            else:
+                return obj
 
-            with col2:
-                st.markdown(f"""
-                    <div class="report-card yellow-card">
-                        <div class="report-title">😊 Sentiment</div>
-                        <div class="report-metric"><b>Category:</b> {emotion_result['category']}</div>
-                        <div class="report-metric"><b>Model Confidence:</b> {emotion_result['confidence'] * 100:.2f}%</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            col3, col4 = st.columns(2)
-            with col3:
-                st.markdown(f"""
-                    <div class="report-card blue-card">
-                        <div class="report-title">👁️ Eye Contact</div>
-                        <div class="report-metric"><b>Eye Contact:</b> {eye_contact_percentage:.2f}%</div>
-                        <div class="report-metric"><b>Feedback:</b> {eye_feedback}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            with col4:
-                st.markdown(f"""
-                    <div class="report-card gray-card">
-                        <div class="report-title">🧍 Posture</div>
-                        <div class="report-metric"><b>Good Posture:</b> {posture_result.get('good_percent', 0):.2f}%</div>
-                        <div class="report-metric"><b>Summary:</b> {posture_result.get('summary', 'Not available')}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-    # ------------------------
-    # 📚 Learning Modules
-    # ------------------------
-    elif page == "📚 Learning Modules":
-        st.markdown('<div class="main-title">📚 Learning Modules</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle">Learn, practice, and master your speaking skills</div>', unsafe_allow_html=True)
-    
-        modules = [
-            {
-                "title": "Module 1 - Posture & Presence",
-                "outcome": "Learners will understand how posture influences audience perception and develop confident, balanced body language that projects credibility during speeches.",
-                "subs": [
-                    ("1.1", "Importance of Posture in Public Speaking", "https://youtu.be/Ks-_Mh1QhMc?si=bh4_4B-nnpS1puhX"),
-                    ("1.2", "Common Posture Mistakes and How to Fix Them", "https://youtu.be/KP7XdGmtX5I"),
-                    ("1.3", "Exercises to Improve Body Alignment and Balance", "https://youtu.be/mS_VU71kS24?si=1AxzFrrZPXRKILTh"),
-                    ("1.4", "Applying Confident Posture During Real Speeches", "https://youtu.be/U1O3UFeCEeU?si=YS777AE_CYr81LtR"),
-                ],
-            },
-            {
-                "title": "Module 2 - Eye Contact Mastery",
-                "outcome": "Learners will build natural, controlled eye-contact habits that strengthen audience connection and trust across in-person and virtual settings.",
-                "subs": [
-                    ("2.1", "Why Eye Contact Builds Audience Trust?", "https://youtu.be/MGhwnXV80ZQ?si=T8eyO8iyZqnWaHqS"),
-                    ("2.2", "Maintaining Natural Eye Movement Without Staring", "https://youtu.be/Ior3iIXjMTU?si=eJTq2FvxEOBJNmnk"),
-                    ("2.3", "Techniques for Handling Large or Virtual Audiences", "https://youtu.be/JtTl8-TsZpk?si=lW-OgwIpEl7nYeUK"),
-                    ("2.4", "Practicing Eye Contact with a Mirror or Camera", "https://youtu.be/8OGDhlUvSK4?si=4qvqnGRgtXlkpZzI"),
-                ],
-            },
-            {
-                "title": "Module 3 - Tone & Confidence",
-                "outcome": "Learners will learn to use vocal tone, variety, and breathing techniques to convey confidence, reduce anxiety, and emotionally engage listeners.",
-                "subs": [
-                    ("3.1", "How Tone Reflects Your Confidence and Emotion", "https://youtu.be/hPQyHXc1ksA?si=EGevfjyA8lkZs5V1"),
-                    ("3.2", "Avoiding Monotone Delivery — Adding Vocal Variety", "https://youtu.be/ikuNOsPU5E0?si=VjquxImV5-J5E9Jv"),
-                    ("3.3", "Voice Warm-Up & Breathing Exercises for Power", "https://youtu.be/7eDcHZZn7hU?si=Hz0dFLhz5gDsx71a"),
-                    ("3.4", "Managing Stage Anxiety and Nervousness", "https://youtu.be/VEStYVONy-0?si=M_Q4C4AIfVmpGTbz"),
-                ],
-            },
-            {
-                "title": "Module 4 - Speech Speed & Pauses",
-                "outcome": "Learners will master pacing, rhythm, and pauses to deliver clear, impactful, and well-timed speeches that maintain audience attention.",
-                "subs": [
-                    ("4.1", "Finding Your Ideal Speaking Speed", "https://youtu.be/032Hum9KNjw?si=QNP8UZzErO90lLJG"),
-                    ("4.2", "Using Strategic Pauses for Impact", "https://youtu.be/kXsd25D25HI?si=oucAnC9kM9FkKvwr"),
-                    ("4.3", "Exercises to Control Speed and Breathing", "https://youtu.be/QxpR2_gwUEY?si=rXj91M0YWZ42Px4-"),
-                    ("4.4", "Improving Clarity and Rhythm While Speaking", "https://youtu.be/5YtbvUSdt5Q?si=ck6OfVIeJfUix3FE"),
-                ],
-            },
-        ]
-
-        for module in modules:
-            st.markdown(f"<div class='report-card blue-card'style='margin-top: 60px;'><div class='report-title'>{module['title']}</div>", unsafe_allow_html=True)
-            st.markdown(f"<p style='font-size:15px; color:#aaa;'>{module['outcome']}</p>", unsafe_allow_html=True)
-
-            # First submodule visible
-            first_sub = module["subs"][0]
-            st.markdown(f"**{first_sub[0]} {first_sub[1]}**", unsafe_allow_html=True)
-            st.markdown(f"""
-                <a href="{first_sub[2]}" target="_blank">
-                    <button style="
-                        background-color:grey;
-                        color:white;
-                        border:none;
-                        padding:6px 16px;
-                        border-radius:6px;
-                        cursor:pointer;
-                        margin-top:5px;
-                        margin-bottom:10px;">
-                        Learn ▶
-                    </button>
-                </a>
-            """, unsafe_allow_html=True)
-
-            # Remaining submodules in an expander
-            with st.expander("Show more submodules"):
-                for sub in module["subs"][1:]:
-                    col1, col2 = st.columns([4, 1])
-                    with col1:
-                        st.markdown(f"- {sub[0]} {sub[1]}")
-                    with col2:
-                        st.markdown(f"""
-                            <a href="{sub[2]}" target="_blank">
-                                <button style="
-                                    background-color:grey;
-                                    color:white;
-                                    border:none;
-                                    padding:6px 16px;
-                                    border-radius:6px;
-                                    cursor:pointer;
-                                    margin-top:5px;
-                                    margin-bottom:10px;">
-                                    Learn ▶
-                                </button>
-                            </a>
-            """, unsafe_allow_html=True)
-
-    # ------------------------
-    # 📈 My Progress
-    # ------------------------
-    elif page == "📈 My Progress":
-        st.markdown('<div class="main-title">📈 My Progress</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle">Track your improvements and milestones</div>', unsafe_allow_html=True)
-        # ... [use same progress graph section as code1] ...
-        # ---- Summary Stats ----
-        st.markdown("### 📊 Usage Summary")
-        cols = st.columns(4)
-        with cols[0]:
-            st.metric("Videos Analyzed", "12")
-
-        with cols[2]:
-            st.metric("Feedback Reports Viewed", "8")
-
-        # ---- Progress Graph ----
-        st.markdown("<br>### 💫 Monthly Progress", unsafe_allow_html=True)
-            
-
-        data = {
-            "Month": ["June", "July", "Aug", "Sept", "Oct"],
-            "Videos": [2, 3, 5, 4, 6]
+        results = {
+            "video_name": video_name,
+            "timestamp": timestamp,
+            "wpm": round(wpm),
+            "category": category,
+            "audio_emotion": audio_emotion_result,
+            "eye_contact_percentage": eye_contact_percentage,
+            "eye_feedback": eye_feedback,
+            "posture": posture_result,
+            "deepface": deepface_result,
         }
-        df = pd.DataFrame(data)
 
-        fig, ax = plt.subplots(figsize=(5, 3))
+        # ✅ Convert NumPy/tensor values to native types before saving
+        results_native = convert_to_native(results)
 
-        # Gradient bars
-        colors = plt.cm.cool(np.linspace(0.3, 1, len(df)))
-        bars = ax.bar(df["Month"], df["Videos"], color=colors, width=0.25, edgecolor="none", zorder=3)
+        with open(os.path.join(upload_folder, "results.json"), "w") as f:
+            json.dump(results_native, f, indent=4)
 
-            # Rounded bar tops
-        for bar in bars:
-            bar.set_linewidth(0)
-            x, y = bar.get_xy()
-            w, h = bar.get_width(), bar.get_height()
-            ax.add_patch(plt.Rectangle((x, y + h - 0.15), w, 0.15, color=bar.get_facecolor(), ec="none", lw=0))
+        # ---- Feedback Report ----
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.subheader("📊 Feedback Report")
 
-            # Add cute markers
-        ax.plot(df["Month"], df["Videos"], 'o--', color="red", markersize=4, linewidth=0.5, zorder=4)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"""
+                <div class="report-card green-card">
+                    <div class="report-title">🎵 Speech Speed</div>
+                    <div class="report-metric"><b>Words Per Minute:</b> {round(wpm)}</div>
+                    <div class="report-metric"><b>Category:</b> {category}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"""
+                <div class="report-card yellow-card">
+                    <div class="report-title">😊 Sentiment</div>
+                    <div class="report-metric"><b>Category:</b> {audio_emotion_result['category']}</div>
+                    <div class="report-metric"><b>Confidence:</b> {audio_emotion_result['confidence'] * 100:.2f}%</div>
+                </div>
+            """, unsafe_allow_html=True)
 
-            # Clean layout
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.set_facecolor("#f8f9fa")            
-        ax.grid(True, linestyle="--", alpha=0.4, zorder=0)
-        ax.set_ylabel("Videos", fontsize=9)
-        ax.set_xlabel("")
-        ax.tick_params(axis="x", labelsize=9)
-        ax.tick_params(axis="y", labelsize=8)
-        ax.set_title("Video Analysis Trend", fontsize=10, weight='bold', pad=10)
+        col3, col4 = st.columns(2)
+        with col3:
+            st.markdown(f"""
+                <div class="report-card blue-card">
+                    <div class="report-title">👁️ Eye Contact</div>
+                    <div class="report-metric"><b>Eye Contact:</b> {eye_contact_percentage:.2f}%</div>
+                    <div class="report-metric"><b>Feedback:</b> {eye_feedback}</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with col4:
+            st.markdown(f"""
+                <div class="report-card gray-card">
+                    <div class="report-title">🧍 Posture</div>
+                    <div class="report-metric"><b>Good Posture:</b> {posture_result.get('good_percent', 0):.2f}%</div>
+                    <div class="report-metric"><b>Summary:</b> {posture_result.get('summary', 'Not available')}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
-        st.pyplot(fig)
-        # ---- View Feedback Button ----
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown(
-            """
-            <div style="text-align:center;">
-                <button style="
-                    background-color:#4A90E2;
-                    color:white;
-                    border:none;
-                    padding:10px 25px;
-                    border-radius:8px;
-                    cursor:pointer;
-                    font-size:14px;
-                ">
-                    View Feedback
-                </button>
+        st.markdown(f"""
+            <div class="report-card purple-card">
+                <div class="report-title">🎭 Facial Expressions</div>
+                <div class="report-metric"><b>Dominant Emotion:</b> {deepface_result.get('dominant', 'N/A')}</div>
+                <div class="report-metric"><b>Positive:</b> {deepface_result.get('positive', 0):.1f}%</div>
+                <div class="report-metric"><b>Neutral:</b> {deepface_result.get('neutral', 0):.1f}%</div>
+                <div class="report-metric"><b>Negative:</b> {deepface_result.get('negative', 0):.1f}%</div>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+        """, unsafe_allow_html=True)
 
-    # ------------------------
-    # 🗂️ Library
-    # ------------------------
-    elif page == "🗂️ Library":
-        st.markdown('<div class="main-title">🗂️ Library</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subtitle">Access your saved analyses and feedback</div>', unsafe_allow_html=True)
+# ==========================================================
+# 📚 LEARNING MODULES PAGE
+# ==========================================================
+elif page == "📚 Learning Modules":
+    st.markdown("""
+        <style>
+            .module-card {
+                background-color: #f9f9f9;
+                border: 1px solid #ddd;
+                border-radius: 16px;
+                padding: 30px;
+                margin-top: 40px;
+                margin-bottom: 30px;
+                box-shadow: 0 4px 14px rgba(0,0,0,0.1);
+                transition: 0.3s ease-in-out;
+            }
+            .module-card:hover {
+                box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            }
+            .module-title {
+                font-size: 22px;
+                font-weight: bold;
+                color: #3A7CA5;
+                margin-bottom: 10px;
+            }
+            .module-outcome {
+                font-size: 15px;
+                color: #444;
+                margin-bottom: 20px;
+                line-height: 1.6;
+            }
+            .learn-btn {
+                background-color: #3A7CA5;
+                color: white;
+                border: none;
+                padding: 7px 18px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: 0.3s;
+                margin-bottom: 1rem;
+            }
+            .learn-btn:hover {
+                background-color: #245d7a;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-        # ---- Uploaded Videos ----
-        st.markdown("### 🎞️ Uploaded Videos")
-        cols = st.columns(6)
-        for i, date in enumerate(["Oct 10", "Oct 12", "Oct 15"]):
-            with cols[i]:
-                st.markdown(f"""
-                    <div class="report-card yellow-card" 
-                        style="padding:8px;text-align:center;border-radius:10px;font-size:13px;">
-                        📹<br>{date}, 2025
-                    </div>
-                """, unsafe_allow_html=True)
-        
-        # ---- Feedback Videos ----
-        st.markdown("<br><hr><br>", unsafe_allow_html=True)
-        st.markdown("### 🧠 Feedback Videos")
-        cols = st.columns(6)
-        for i, date in enumerate(["Oct 10", "Oct 12", "Oct 15"]):
-            with cols[i]:
-                st.markdown(f"""
-                    <div class="report-card blue-card" 
-                        style="padding:8px;text-align:center;border-radius:10px;font-size:13px;">
-                        🎧<br>{date}, 2025
-                    </div>
-                """, unsafe_allow_html=True)
+    # ✅ Page headers
+    st.markdown('<div class="main-title">📚 Learning Modules</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Learn, practice, and master your speaking skills</div>', unsafe_allow_html=True)
+
+    # ✅ Module data
+    modules = [
+        {
+            "title": "Module 1 - Posture & Presence",
+            "outcome": "Understand how posture influences audience perception and develop confident, balanced body language that projects credibility during speeches.",
+            "subs": [
+                ("1.1", "Importance of Posture in Public Speaking", "https://youtu.be/Ks-_Mh1QhMc?si=bh4_4B-nnpS1puhX"),
+                ("1.2", "Common Posture Mistakes and How to Fix Them", "https://youtu.be/KP7XdGmtX5I"),
+                ("1.3", "Exercises to Improve Body Alignment and Balance", "https://youtu.be/mS_VU71kS24?si=1AxzFrrZPXRKILTh"),
+                ("1.4", "Applying Confident Posture During Real Speeches", "https://youtu.be/U1O3UFeCEeU?si=YS777AE_CYr81LtR"),
+            ],
+        },
+        {
+            "title": "Module 2 - Eye Contact Mastery",
+            "outcome": "Build natural, controlled eye-contact habits that strengthen audience connection and trust in both in-person and virtual settings.",
+            "subs": [
+                ("2.1", "Why Eye Contact Builds Audience Trust?", "https://youtu.be/MGhwnXV80ZQ?si=T8eyO8iyZqnWaHqS"),
+                ("2.2", "Maintaining Natural Eye Movement Without Staring", "https://youtu.be/Ior3iIXjMTU?si=eJTq2FvxEOBJNmnk"),
+                ("2.3", "Techniques for Handling Large or Virtual Audiences", "https://youtu.be/JtTl8-TsZpk?si=lW-OgwIpEl7nYeUK"),
+                ("2.4", "Practicing Eye Contact with a Mirror or Camera", "https://youtu.be/8OGDhlUvSK4?si=4qvqnGRgtXlkpZzI"),
+            ],
+        },
+        {
+            "title": "Module 3 - Tone & Confidence",
+            "outcome": "Use vocal tone, variety, and breathing techniques to convey confidence, reduce anxiety, and emotionally engage listeners.",
+            "subs": [
+                ("3.1", "How Tone Reflects Your Confidence and Emotion", "https://youtu.be/hPQyHXc1ksA?si=EGevfjyA8lkZs5V1"),
+                ("3.2", "Avoiding Monotone Delivery — Adding Vocal Variety", "https://youtu.be/ikuNOsPU5E0?si=VjquxImV5-J5E9Jv"),
+                ("3.3", "Voice Warm-Up & Breathing Exercises for Power", "https://youtu.be/7eDcHZZn7hU?si=Hz0dFLhz5gDsx71a"),
+                ("3.4", "Managing Stage Anxiety and Nervousness", "https://youtu.be/VEStYVONy-0?si=M_Q4C4AIfVmpGTbz"),
+            ],
+        },
+        {
+            "title": "Module 4 - Speech Speed & Pauses",
+            "outcome": "Master pacing, rhythm, and pauses to deliver impactful speeches that maintain audience attention.",
+            "subs": [
+                ("4.1", "Finding Your Ideal Speaking Speed", "https://youtu.be/032Hum9KNjw?si=QNP8UZzErO90lLJG"),
+                ("4.2", "Using Strategic Pauses for Impact", "https://youtu.be/kXsd25D25HI?si=oucAnC9kM9FkKvwr"),
+                ("4.3", "Exercises to Control Speed and Breathing", "https://youtu.be/QxpR2_gwUEY?si=rXj91M0YWZ42Px4-"),
+                ("4.4", "Improving Clarity and Rhythm While Speaking", "https://youtu.be/5YtbvUSdt5Q?si=ck6OfVIeJfUix3FE"),
+            ],
+        },
+    ]
+
+    for module in modules:
+        st.markdown(f"<div class='module-card'><div class='module-title'>{module['title']}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='module-outcome'>{module['outcome']}</div>", unsafe_allow_html=True)
+
+        first = module["subs"][0]
+        st.markdown(f"**{first[0]} {first[1]}**", unsafe_allow_html=True)
+        st.markdown(f"""
+        <a href="{first[2]}" target="_blank">
+            <button class="learn-btn">Learn ▶</button>
+        </a>
+        """, unsafe_allow_html=True)
+
+        with st.expander("Show more submodules"):
+            for sub in module["subs"][1:]:
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.markdown(f"- {sub[0]} {sub[1]}")
+                with col2:
+                    st.markdown(f"""
+                    <a href="{sub[2]}" target="_blank">
+                        <button class="learn-btn">Learn ▶</button>
+                    </a>
+                    """, unsafe_allow_html=True)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ==========================================================
+# 🗂️ LIBRARY PAGE
+# ==========================================================
+elif page == "🗂️ Library":
+    st.markdown('<div class="main-title">🗂️ Library</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Access your saved analysis and feedback</div>', unsafe_allow_html=True)
+
+    if not os.path.exists(UPLOADS_DIR) or len(os.listdir(UPLOADS_DIR)) == 0:
+        st.info("No videos have been analyzed yet. Upload one in '🎥 Analyze Video'.")
+    else:
+        folders = sorted(os.listdir(UPLOADS_DIR), reverse=True)
+
+        # Create pairs of folders for 2-column layout
+        for i in range(0, len(folders), 2):
+            cols = st.columns(2)
+
+            for j in range(2):
+                if i + j >= len(folders):
+                    break  # handle odd number of folders
+                folder = folders[i + j]
+                folder_path = os.path.join(UPLOADS_DIR, folder)
+                results_file = os.path.join(folder_path, "results.json")
+
+                if not os.path.exists(results_file):
+                    continue
+
+                try:
+                    with open(results_file, "r") as f:
+                        data = json.load(f)
+                except (json.JSONDecodeError, Exception):
+                    continue
+                # Format timestamp for display
+                raw_timestamp = data.get("timestamp", "")
+                try:
+                    dt = datetime.fromisoformat(raw_timestamp)
+                except Exception:
+                    try:
+                        dt = datetime.strptime(raw_timestamp, "%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        dt = None
+
+                if dt:
+                    formatted_time = dt.strftime("%B %d, %Y — %I:%M %p")
+                else:
+                    formatted_time = raw_timestamp 
+
+                audio_emotion = data.get("audio_emotion", {})
+                emotion_category = audio_emotion.get("category", "N/A")
+                emotion_confidence = audio_emotion.get("confidence", 0)
+
+                with cols[j]:
+                    st.markdown(f"""
+                        <div class="report-card" style="background:rgba(255,255,255,0.05);margin-top:20px;">
+                            🎵 <b>Speech Speed:</b> {data['wpm']} WPM ({data['category']})<br>
+                            😊 <b>Sentiment:</b> {emotion_category} ({emotion_confidence * 100:.1f}% confidence)<br>
+                            👁️ <b>Eye Contact:</b> {data['eye_contact_percentage']:.1f}%<br>
+                            🧍 <b>Good Posture:</b> {data['posture'].get('good_percent', 0):.1f}% <br>
+                            🎭 <b>Facial Expressions:</b> {data['deepface'].get('dominant', 'N/A')}<br>
+                            <b>🕒 Uploaded:</b> {formatted_time}<br><br>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    # Video player below each card
+                    video_files = [f for f in os.listdir(folder_path) if f.endswith(('.mp4', '.mov', '.avi'))]
+                    if video_files:
+                        video_path = os.path.join(folder_path, video_files[0])
+                        st.video(video_path)
