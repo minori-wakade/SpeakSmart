@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Generated outputs
+uploads/
+Annotated_eye_contact/
+Annotated_Deepface/
+Annotated_Posture/
+
+# Audio
+test.wav
+*.mp4
+
+# Datasets
+CNN_Sentiment_Analysis/Audio_Dataset2/
+Posture/Posture DATA/
+Posture/pose_data.csv
