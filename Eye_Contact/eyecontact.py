@@ -80,10 +80,13 @@ def process_eye_contact(video_path, output_path, progress_callback=None):
 
     # ✅ Feedback based on result
     if eye_contact_percentage >= 85:
+        status = "GOOD"
         feedback = "Excellent eye contact! You had strong engagement with the audience."
     elif eye_contact_percentage >= 60:
+        status = "OK"
         feedback = "Good eye contact, but try to engage more consistently."
     else:
+        status = "BAD"
         feedback = "Try to maintain better eye contact to improve audience connection."
 
-    return eye_contact_percentage, feedback, output_path
+    return eye_contact_percentage, status, feedback, output_path

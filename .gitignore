@@ -1,0 +1,20 @@
+# Generated output folders
+uploads/
+Annotated_eye_contact/
+Annotated_Deepface/
+Annotated_Posture/
+
+# Audio files
+test.wav
+*.wav
+
+# Datasets (large files)
+CNN_Sentiment_Analysis/Audio_Dataset2/
+
+# Posture generated data
+Posture/Posture DATA/
+Posture/pose_data.csv
+
+# Python cache
+__pycache__/
+*.pyc

@@ -19,12 +19,11 @@ def extract_wpm(file_path):
 
     return wpm
 
-
 def categorize_wpm(wpm):
     """Categorizes speech speed based on WPM."""
     if wpm < 130:
-        return "Slow"
+        return "Slow","BAD"
     elif 130 <= wpm <= 165:
-        return "Normal"
+        return "Normal","GOOD"
     else:
-        return "Fast"
+        return "Fast","BAD"

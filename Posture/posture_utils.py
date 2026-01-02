@@ -93,10 +93,13 @@ def analyze_posture(predictions):
 
     if good_count / total > 0.75:
         summary = "✅ Good posture overall!"
+        status = "GOOD"
     elif bad_count / total > 0.6:
         summary = "⚠️ Poor posture overall!"
+        status = "BAD"
     else:
         summary = "Mixed posture — needs improvement."
+        status = "OK"
 
     return {
         "good": good_count,
@@ -104,7 +107,8 @@ def analyze_posture(predictions):
         "total": total,
         "good_percent": good_percent,
         "bad_percent": bad_percent,
-        "summary": summary
+        "summary": summary,
+        "status": status
     }
 
 

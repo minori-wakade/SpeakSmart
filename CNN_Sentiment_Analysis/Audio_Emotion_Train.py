@@ -13,10 +13,10 @@ import matplotlib.pyplot as plt
 import itertools
 
 # Configuration
-DATA_PATH = "Audio_Dataset"  # Update this path to your dataset location
-SR = 22050                    # Sampling rate
-N_MFCC = 40                   # Number of MFCC coefficients
-MAX_PAD_LEN = 174             # Number of time frames to pad/truncate to
+DATA_PATH = "Audio_Dataset"  
+SR = 22050                    
+N_MFCC = 40                   
+MAX_PAD_LEN = 174            
 BATCH_SIZE = 32
 EPOCHS = 40
 TEST_SIZE = 0.2

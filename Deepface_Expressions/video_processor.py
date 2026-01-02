@@ -247,12 +247,18 @@ def process_video(input_path, output_path=None):
                 print(f"  {g.capitalize()}: {pct}%")
             print(f"Dominant Emotion: {dominant_emotion_group.upper()} ({dominant_percentage}%)")
 
+            if dominant_emotion_group in ['positive', 'neutral']:
+                status = "GOOD"
+            else:
+                status = "BAD"
+
             # ✅ Return structured data for Streamlit
             return {
                 "dominant": dominant_emotion_group.capitalize(),
                 "positive": emotion_percentages.get("positive", 0),
                 "neutral": emotion_percentages.get("neutral", 0),
                 "negative": emotion_percentages.get("negative", 0),
+                "status": status,
                 "video_path": output_path
             }
         else:
@@ -262,6 +268,7 @@ def process_video(input_path, output_path=None):
                 "positive": 0,
                 "neutral": 0,
                 "negative": 0,
+                "status": "BAD",
                 "video_path": output_path
             }
 

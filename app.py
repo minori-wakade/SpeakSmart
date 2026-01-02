@@ -102,6 +102,24 @@ section[data-testid="stSidebar"] {
 .purple-card {border: 2px solid #C77DFF; background: rgba(199,125,255,0.08); height: 200px}
 .report-title {font-size: 1.2rem; font-weight: 600; margin-bottom: 10px; text-align:center;}
 .report-metric {font-size: 1rem; margin: 4px 0;}
+            
+/* Badge Styles */
+.status-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.8rem;
+    z-index: 10;
+}
+
+.status-good { background-color: #28a745; }   /* Green */
+.status-bad { background-color: #dc3545; }    /* Red */
+.status-ok { background-color: #ffc107; }     /* Yellow/Orange */
+
 video {
     max-height: 240px;
     border-radius: 12px;
@@ -152,11 +170,12 @@ if page == "🎥 Analyze Video":
         # Audio extraction
         audio_path = video_to_wav(file_path)
         # st.audio(audio_path)
-        # Run analyses
+        # Run analysis
+        
         with st.spinner("Analyzing your video, please wait..."):
             audio_emotion_result = run_emotion_analysis(audio_path)
             annotated_output_path = os.path.join(ANNOTATED_DIR, f"{timestamp}_eye_contact.mp4")
-            eye_contact_percentage, eye_feedback, _ = process_eye_contact(file_path, annotated_output_path, None)
+            eye_contact_percentage, status, eye_feedback, _ = process_eye_contact(file_path, annotated_output_path, None)
             wpm = extract_wpm(audio_path)
             category = categorize_wpm(wpm)
             posture_result = run_posture_analysis(file_path)
@@ -187,62 +206,94 @@ if page == "🎥 Analyze Video":
             "posture": posture_result,
             "deepface": deepface_result,
         }
+        status_to_class = {"GOOD": "status-good", "BAD": "status-bad", "OK": "status-ok"}
 
         # ✅ Convert NumPy/tensor values to native types before saving
         results_native = convert_to_native(results)
+        category, speed_status = categorize_wpm(wpm) 
+        audio_status = audio_emotion_result.get("status", "OK").upper()
+        eye_contact_percentage, eye_status, eye_feedback, _ = process_eye_contact(file_path, annotated_output_path, None)
+        posture_status = posture_result.get("status", "OK").upper()
+        facial_status = deepface_result.get("status", "BAD").upper()
+        # Add status for each metric
+        results_native.update({
+            "speech_status": speed_status,               
+            "sentiment_status": audio_status,           
+            "eye_status": eye_status,                    
+            "posture_status": posture_status,            
+            "facial_status": facial_status              
+        })
 
         with open(os.path.join(upload_folder, "results.json"), "w") as f:
             json.dump(results_native, f, indent=4)
-
+        
         # ---- Feedback Report ----
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("📊 Feedback Report")
 
         col1, col2 = st.columns(2)
         with col1:
+            badge_class = status_to_class.get(speed_status, "status-ok")
             st.markdown(f"""
-                <div class="report-card green-card">
-                    <div class="report-title">🎵 Speech Speed</div>
-                    <div class="report-metric"><b>Words Per Minute:</b> {round(wpm)}</div>
-                    <div class="report-metric"><b>Category:</b> {category}</div>
-                </div>
-            """, unsafe_allow_html=True)
+        <div class="report-card green-card" style="position: relative;">
+            <div class="status-badge {badge_class}">{speed_status}</div>
+            <div class="report-title">🎵 Speech Speed</div>
+            <div class="report-metric"><b>Words Per Minute:</b> {round(wpm)}</div>
+            <div class="report-metric"><b>Category:</b> {category}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
         with col2:
+            badge_class = status_to_class.get(audio_status, "status-ok")
             st.markdown(f"""
-                <div class="report-card yellow-card">
-                    <div class="report-title">😊 Sentiment</div>
-                    <div class="report-metric"><b>Category:</b> {audio_emotion_result['category']}</div>
-                    <div class="report-metric"><b>Confidence:</b> {audio_emotion_result['confidence'] * 100:.2f}%</div>
-                </div>
+            <div class="report-card yellow-card" style="position: relative;">
+                <div class="status-badge {badge_class}">{audio_status}</div>
+                <div class="report-title">😊 Sentiment</div>
+                <div class="report-metric"><b>Category:</b> {audio_emotion_result['category']}</div>
+                <div class="report-metric"><b>Confidence:</b> {audio_emotion_result['confidence'] * 100:.2f}%</div>
+            </div>
             """, unsafe_allow_html=True)
+
 
         col3, col4 = st.columns(2)
         with col3:
+            badge_class = status_to_class.get(eye_status, "status-ok")
+
             st.markdown(f"""
-                <div class="report-card blue-card">
-                    <div class="report-title">👁️ Eye Contact</div>
-                    <div class="report-metric"><b>Eye Contact:</b> {eye_contact_percentage:.2f}%</div>
-                    <div class="report-metric"><b>Feedback:</b> {eye_feedback}</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with col4:
-            st.markdown(f"""
-                <div class="report-card gray-card">
-                    <div class="report-title">🧍 Posture</div>
-                    <div class="report-metric"><b>Good Posture:</b> {posture_result.get('good_percent', 0):.2f}%</div>
-                    <div class="report-metric"><b>Summary:</b> {posture_result.get('summary', 'Not available')}</div>
-                </div>
+            <div class="report-card blue-card" style="position: relative;">
+                <div class="status-badge {badge_class}">{eye_status}</div>
+                <div class="report-title">👁️ Eye Contact</div>
+                <div class="report-metric"><b>Eye Contact:</b> {eye_contact_percentage:.2f}%</div>
+                <div class="report-metric"><b>Feedback:</b> {eye_feedback}</div>
+            </div>
             """, unsafe_allow_html=True)
 
-        st.markdown(f"""
-            <div class="report-card purple-card">
-                <div class="report-title">🎭 Facial Expressions</div>
-                <div class="report-metric"><b>Dominant Emotion:</b> {deepface_result.get('dominant', 'N/A')}</div>
-                <div class="report-metric"><b>Positive:</b> {deepface_result.get('positive', 0):.1f}%</div>
-                <div class="report-metric"><b>Neutral:</b> {deepface_result.get('neutral', 0):.1f}%</div>
-                <div class="report-metric"><b>Negative:</b> {deepface_result.get('negative', 0):.1f}%</div>
+        with col4:
+            badge_class = status_to_class.get(posture_status, "status-ok")
+
+            st.markdown(f"""
+            <div class="report-card gray-card" style="position: relative;">
+                <div class="status-badge {badge_class}">{posture_status}</div>
+                <div class="report-title">🧍 Posture</div>
+                <div class="report-metric"><b>Good Posture:</b> {posture_result.get('good_percent', 0):.2f}%</div>
+                <div class="report-metric"><b>Summary:</b> {posture_result.get('summary', 'Not available')}</div>
             </div>
+            """, unsafe_allow_html=True)
+
+
+        badge_class = status_to_class.get(facial_status, "status-bad")
+
+        st.markdown(f"""
+        <div class="report-card purple-card" style="position: relative;">
+            <div class="status-badge {badge_class}">{facial_status}</div>
+            <div class="report-title">🎭 Facial Expressions</div>
+            <div class="report-metric"><b>Dominant Emotion:</b> {deepface_result.get('dominant', 'N/A')}</div>
+            <div class="report-metric"><b>Positive:</b> {deepface_result.get('positive', 0):.1f}%</div>
+            <div class="report-metric"><b>Neutral:</b> {deepface_result.get('neutral', 0):.1f}%</div>
+            <div class="report-metric"><b>Negative:</b> {deepface_result.get('negative', 0):.1f}%</div>
+        </div>
         """, unsafe_allow_html=True)
+
 
 # ==========================================================
 # 📚 LEARNING MODULES PAGE
@@ -373,13 +424,11 @@ elif page == "🗂️ Library":
     st.markdown('<div class="main-title">🗂️ Library</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Access your saved analysis and feedback</div>', unsafe_allow_html=True)
 
-    if not os.path.exists(UPLOADS_DIR) or len(os.listdir(UPLOADS_DIR)) == 0:
-        st.info("No videos have been analyzed yet. Upload one in '🎥 Analyze Video'.")
-    else:
-        folders = sorted(os.listdir(UPLOADS_DIR), reverse=True)
+    
+    folders = sorted(os.listdir(UPLOADS_DIR), reverse=True)
 
         # Create pairs of folders for 2-column layout
-        for i in range(0, len(folders), 2):
+    for i in range(0, len(folders), 2):
             cols = st.columns(2)
 
             for j in range(2):
@@ -417,14 +466,28 @@ elif page == "🗂️ Library":
                 emotion_confidence = audio_emotion.get("confidence", 0)
 
                 with cols[j]:
+                    # Emoji map
+                    status_emoji_map = {
+                        "GOOD": "🟢",
+                        "OK": "🟡",
+                        "BAD": "🔴"
+                    }
+
+                    # Get statuses from JSON
+                    speech_status = data.get("speech_status", "OK").upper()
+                    sentiment_status = data.get("sentiment_status", "OK").upper()
+                    eye_status = data.get("eye_status", "OK").upper()
+                    posture_status = data.get("posture_status", "OK").upper()
+                    facial_status = data.get("facial_status", "BAD").upper()
+
                     st.markdown(f"""
                         <div class="report-card" style="background:rgba(255,255,255,0.05);margin-top:20px;">
-                            🎵 <b>Speech Speed:</b> {data['wpm']} WPM ({data['category']})<br>
-                            😊 <b>Sentiment:</b> {emotion_category} ({emotion_confidence * 100:.1f}% confidence)<br>
-                            👁️ <b>Eye Contact:</b> {data['eye_contact_percentage']:.1f}%<br>
-                            🧍 <b>Good Posture:</b> {data['posture'].get('good_percent', 0):.1f}% <br>
-                            🎭 <b>Facial Expressions:</b> {data['deepface'].get('dominant', 'N/A')}<br>
-                            <b>🕒 Uploaded:</b> {formatted_time}<br><br>
+                            {status_emoji_map.get(speech_status,"🟡")} <b>Speech Speed:</b> {data['wpm']} WPM ({data['category'][0] if isinstance(data['category'], list) else data['category']})<br>
+                            {status_emoji_map.get(sentiment_status,"🟡")} <b>Sentiment:</b> {emotion_category} ({emotion_confidence * 100:.1f}% confidence)<br>
+                            {status_emoji_map.get(eye_status,"🟡")} <b>Eye Contact:</b> {data['eye_contact_percentage']:.1f}%<br>
+                            {status_emoji_map.get(posture_status,"🟡")} <b>Good Posture:</b> {data['posture'].get('good_percent', 0):.1f}% <br>
+                            {status_emoji_map.get(facial_status,"🔴")} <b>Facial Expressions:</b> {data['deepface'].get('dominant', 'N/A')}<br>
+                            <b>Uploaded:</b> {formatted_time}<br><br>
                         </div>
                     """, unsafe_allow_html=True)
 
