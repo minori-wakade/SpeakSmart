@@ -100,6 +100,8 @@ section[data-testid="stSidebar"] {
 .blue-card {border: 2px solid #4CC9F0; background: rgba(76,201,240,0.08);height: 160px}
 .gray-card {border: 2px solid #ADB5BD; background: rgba(173,181,189,0.08);height: 160px}
 .purple-card {border: 2px solid #C77DFF; background: rgba(199,125,255,0.08); height: 200px}
+.magenta-card {border: 2px solid #E75480; background: rgba(231, 84, 128, 0.08);height: 220px;}
+
 .report-title {font-size: 1.2rem; font-weight: 600; margin-bottom: 10px; text-align:center;}
 .report-metric {font-size: 1rem; margin: 4px 0;}
             
@@ -127,6 +129,14 @@ video {
 }
 </style>
 """, unsafe_allow_html=True)
+
+def get_score_color(score):
+    if score < 4:
+        return "#dc3545"   
+    elif score < 7:
+        return "#ffc107"  
+    else:
+        return "#28a745"   
 
 # -----------------------------------------
 # 🧭 Custom Sidebar Navigation
@@ -215,21 +225,71 @@ if page == "🎥 Analyze Video":
         eye_contact_percentage, eye_status, eye_feedback, _ = process_eye_contact(file_path, annotated_output_path, None)
         posture_status = posture_result.get("status", "OK").upper()
         facial_status = deepface_result.get("status", "BAD").upper()
+
+        # -------------------------------
+        # Overall Score (Simple Average)
+        # -------------------------------
+        STATUS_SCORE_MAP = {
+            "GOOD": 10,
+            "OK": 6,
+            "BAD": 2
+        }
+
+        scores = [
+            STATUS_SCORE_MAP.get(speed_status, 6),
+            STATUS_SCORE_MAP.get(audio_status, 6),
+            STATUS_SCORE_MAP.get(eye_status, 6),
+            STATUS_SCORE_MAP.get(posture_status, 6),
+            STATUS_SCORE_MAP.get(facial_status, 6),
+        ]
+
+        overall_score = round(sum(scores) / len(scores), 1)
+
         # Add status for each metric
         results_native.update({
             "speech_status": speed_status,               
             "sentiment_status": audio_status,           
             "eye_status": eye_status,                    
             "posture_status": posture_status,            
-            "facial_status": facial_status              
+            "facial_status": facial_status,
+            "overall_score": overall_score             
         })
 
         with open(os.path.join(upload_folder, "results.json"), "w") as f:
             json.dump(results_native, f, indent=4)
         
         # ---- Feedback Report ----
+       
         st.markdown("<hr>", unsafe_allow_html=True)
         st.subheader("📊 Feedback Report")
+
+        score_color = get_score_color(overall_score)
+        progress_angle = int((overall_score / 10) * 360)
+
+        st.markdown(f"""
+        <div class="report-card magenta-card" style="position: relative; height: 220px; text-align:center;">
+            <div class="report-title">🏆 Overall Score</div>
+            <div style="
+                width:120px;
+                height:120px;
+                border-radius:50%;
+                background: conic-gradient(rgba(255,255,255,0.1) 0deg {360 - progress_angle}deg, {score_color} {360 - progress_angle}deg 360deg);
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                font-weight:700;
+                color:#fff;
+                margin:auto;
+            ">
+                <div style="
+                    text-align:center;
+                ">
+                    {overall_score} / 10
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
         col1, col2 = st.columns(2)
         with col1:
@@ -479,9 +539,10 @@ elif page == "🗂️ Library":
                     eye_status = data.get("eye_status", "OK").upper()
                     posture_status = data.get("posture_status", "OK").upper()
                     facial_status = data.get("facial_status", "BAD").upper()
-
+                    overall_score = data.get("overall_score", 0)
                     st.markdown(f"""
-                        <div class="report-card" style="background:rgba(255,255,255,0.05);margin-top:20px;">
+                        <div class="report-card" style="background:rgba(255,255,255,0.05);margin-top:20px; height: 220px">
+                            <b>Overall Score: {overall_score} / 10</b><br>
                             {status_emoji_map.get(speech_status,"🟡")} <b>Speech Speed:</b> {data['wpm']} WPM ({data['category'][0] if isinstance(data['category'], list) else data['category']})<br>
                             {status_emoji_map.get(sentiment_status,"🟡")} <b>Sentiment:</b> {emotion_category} ({emotion_confidence * 100:.1f}% confidence)<br>
                             {status_emoji_map.get(eye_status,"🟡")} <b>Eye Contact:</b> {data['eye_contact_percentage']:.1f}%<br>
