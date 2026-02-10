@@ -224,7 +224,7 @@ if page == "🎥 Analyze Video":
     # 🚀 Parallel Analysis
     # -----------------------------------------
 
-        with st.spinner("Analyzing your video (parallel processing)..."):
+        with st.spinner("Analyzing your video..."):
 
             results = {}
 
